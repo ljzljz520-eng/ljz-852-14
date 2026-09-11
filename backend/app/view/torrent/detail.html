@@ -1,0 +1,298 @@
+<?php
+$title = '资源详情';
+ob_start();
+?>
+
+<div class="max-w-5xl mx-auto space-y-6 animate-fade-in-up">
+  <div class="card bg-base-100/90 backdrop-blur shadow-xl border border-base-content/10 overflow-visible">
+    <div class="card-body">
+      <div class="flex flex-col md:flex-row gap-6 justify-between items-start">
+        <div class="flex-1 space-y-2">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="badge badge-primary badge-outline">资源</span>
+            <span class="text-xs font-mono opacity-50">
+              <?=htmlspecialchars($infohash)?>
+            </span>
+          </div>
+          <h1
+            class="text-2xl md:text-3xl font-bold leading-tight break-words text-transparent bg-clip-text bg-gradient-to-r from-base-content to-base-content/70">
+            <?=htmlspecialchars($torrent['name'] ?? $infohash)?>
+          </h1>
+          <div class="text-sm opacity-60">资源详情与磁力链接</div>
+        </div>
+        <div class="flex-none">
+          <a class="btn btn-ghost hover:bg-base-200" href="javascript:history.back()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            返回
+          </a>
+        </div>
+      </div>
+
+      <div class="divider my-4"></div>
+
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-bold uppercase tracking-wider opacity-50">磁力链接</label>
+        <div class="join w-full">
+          <div
+            class="bg-base-300 join-item px-4 flex items-center select-all font-mono text-xs md:text-sm overflow-hidden text-ellipsis w-full"
+            style="white-space: nowrap;">
+            <?=htmlspecialchars('magnet:?xt=urn:btih:' . $infohash)?>
+          </div>
+          <button style="display: none;" type="button" class="btn btn-ghost join-item" id="copy_magnet">复制磁力链</button>
+          <button style="display: none;" type="button" class="btn btn-outline join-item"
+            id="open_thunder_modal">打开迅雷</button>
+          <a style="display: none;" href="magnet:?xt=urn:btih:<?=htmlspecialchars($infohash)?>"
+            class="btn btn-primary join-item">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            打开
+          </a>
+        </div>
+        <div class="text-xs opacity-60">提示：请复制磁力链到浏览器中手动打开。</div>
+        <!-- <div class="text-xs opacity-60">如果浏览器拦截唤起，请复制磁力链手动打开。</div> -->
+      </div>
+    </div>
+  </div>
+
+  <dialog id="thunder_modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">打开迅雷</h3>
+      <p class="py-4 text-sm opacity-70">浏览器可能会拦截非 HTTP 协议，请先复制磁力链。</p>
+      <div class="bg-base-200 rounded-lg p-3 font-mono text-xs break-all" id="magnet_text">
+        <?=htmlspecialchars('magnet:?xt=urn:btih:' . $infohash)?>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn" id="copy_magnet_modal">复制磁力链</button>
+        <button type="button" class="btn btn-primary" id="open_thunder_now">迅雷协议唤起</button>
+        <a class="btn btn-ghost" href="magnet:?xt=urn:btih:<?=htmlspecialchars($infohash)?>">继续打开</a>
+        <form method="dialog">
+          <button class="btn btn-ghost">关闭</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <?php if (empty($torrent)) { ?>
+  <div class="alert alert-warning shadow-lg">
+    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none"
+      viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+    <span>资源不存在或仍在索引中。</span>
+  </div>
+  <?php } else { ?>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="stat bg-base-100 shadow rounded-xl border border-base-content/10">
+      <div class="stat-figure text-secondary">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+          class="inline-block w-8 h-8 stroke-current">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 2.21 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4">
+          </path>
+        </svg>
+      </div>
+      <div class="stat-title">总体积</div>
+      <div class="stat-value text-2xl">
+        <?=format_size($torrent['size_total'] ?? 0)?>
+      </div>
+      <div class="stat-desc">所有文件总和</div>
+    </div>
+
+    <div class="stat bg-base-100 shadow rounded-xl border border-base-content/10">
+      <div class="stat-figure text-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+          class="inline-block w-8 h-8 stroke-current">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+        </svg>
+      </div>
+      <div class="stat-title">状态</div>
+      <?php
+        $status_map = [
+            'active' => '活跃',
+            'dead' => '失效', 
+            'suspect' => '可疑',
+            'fetched' => '已收录',
+        ];
+        $status_raw = (string) ($torrent['status'] ?? 'active');
+        $status_label = $status_map[$status_raw] ?? $status_raw;
+      ?>
+      <div class="stat-value text-2xl uppercase text-primary">
+        <?=htmlspecialchars($status_label)?>
+      </div>
+    </div>
+
+    <div class="stat bg-base-100 shadow rounded-xl border border-base-content/10">
+      <div class="stat-figure text-accent">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+          class="inline-block w-8 h-8 stroke-current">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+      </div>
+      <div class="stat-title">更新时间</div>
+      <div class="stat-value text-xl font-mono">
+        <?=substr($torrent['updated_at'] ?? '-', 0, 10)?>
+      </div>
+    </div>
+  </div>
+
+  <?php
+      $files = $torrent['files_json'] ?? null;
+      if (is_string($files)) {
+          $decoded = json_decode($files, true);
+          $files = is_array($decoded) ? $decoded : null;
+      }
+    ?>
+  <div class="card bg-base-100 shadow-xl border border-base-content/10">
+    <div class="card-body p-0">
+      <div class="p-6 border-b border-base-content/10 bg-base-200/30">
+        <h3 class="font-bold text-lg flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-50" fill="none" viewBox="0 0 24 24"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          文件列表
+        </h3>
+      </div>
+
+      <?php if (empty($files)) { ?>
+      <div class="p-8 text-center opacity-50">暂无文件列表。</div>
+      <?php } else { ?>
+      <div class="overflow-x-auto">
+        <table class="table table-md table-zebra">
+          <thead>
+            <tr>
+              <th class="pl-6">文件路径</th>
+              <th class="w-32 pr-6 text-right">大小</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($files as $f) { ?>
+            <tr class="hover">
+              <td class="pl-6 font-mono text-sm break-all">
+                <span class="opacity-70">
+                  <?=htmlspecialchars($f['path'] ?? '')?>
+                </span>
+              </td>
+              <td class="pr-6 text-right font-mono text-xs opacity-60">
+                <?=format_size($f['size'] ?? 0)?>
+              </td>
+            </tr>
+            <?php } ?>
+          </tbody>
+        </table>
+      </div>
+      <?php } ?>
+    </div>
+  </div>
+
+  <?php } ?>
+  <div id="toast" class="toast toast-top toast-end hidden">
+    <div class="alert alert-success">
+      <span id="toast_text">已复制</span>
+    </div>
+  </div>
+  <div id="magnet_value" data-magnet="<?=htmlspecialchars('magnet:?xt=urn:btih:' . $infohash)?>" class="hidden"></div>
+  <script>
+    const magnetValue = document.getElementById('magnet_value')?.dataset.magnet || '';
+    const thunderValue = (() => {
+      try {
+        const base = btoa('AA' + magnetValue + 'ZZ');
+        return 'thunder://' + base;
+      } catch (e) {
+        return '';
+      }
+    })();
+    const toast = document.getElementById('toast');
+    const toastText = document.getElementById('toast_text');
+    const showToast = (text) => {
+      if (!toast || !toastText) {
+        return;
+      }
+      toastText.textContent = text;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 1600);
+    };
+    const markCopied = (btn) => {
+      if (!btn) {
+        return;
+      }
+      const prev = btn.textContent;
+      btn.textContent = '已复制';
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = prev || '复制磁力链';
+        btn.disabled = false;
+      }, 1200);
+    };
+    const copyMagnet = async (btn) => {
+      try {
+        await navigator.clipboard.writeText(magnetValue);
+      } catch (e) {
+        const input = document.createElement('input');
+        input.value = magnetValue;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      markCopied(btn);
+      showToast('已复制磁力链');
+      const modal = document.getElementById('thunder_modal');
+      if (modal && typeof modal.close === 'function') {
+        setTimeout(() => modal.close(), 500);
+      }
+    };
+    const copyBtn = document.getElementById('copy_magnet');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => copyMagnet(copyBtn));
+    }
+    const copyModalBtn = document.getElementById('copy_magnet_modal');
+    if (copyModalBtn) {
+      copyModalBtn.addEventListener('click', () => copyMagnet(copyModalBtn));
+    }
+    const modalBtn = document.getElementById('open_thunder_modal');
+    if (modalBtn) {
+      modalBtn.addEventListener('click', () => {
+        const modal = document.getElementById('thunder_modal');
+        if (modal && typeof modal.showModal === 'function') {
+          modal.showModal();
+        }
+      });
+    }
+    const openThunder = () => {
+      if (!thunderValue) {
+        showToast('迅雷协议不可用');
+        return;
+      }
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = thunderValue;
+      document.body.appendChild(iframe);
+      setTimeout(() => document.body.removeChild(iframe), 1200);
+      showToast('已尝试唤起迅雷');
+      const modal = document.getElementById('thunder_modal');
+      if (modal && typeof modal.close === 'function') {
+        setTimeout(() => modal.close(), 800);
+      }
+    };
+    const openNow = document.getElementById('open_thunder_now');
+    if (openNow) {
+      openNow.addEventListener('click', openThunder);
+    }
+  </script>
+</div>
+
+<?php
+$content = ob_get_clean();
+include __DIR__ . '/../layout.html';
+?>

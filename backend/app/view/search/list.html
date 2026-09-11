@@ -1,0 +1,149 @@
+<?php
+$title = '搜索结果';
+ob_start();
+?>
+
+<div class="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
+  <div class="card bg-base-100/80 backdrop-blur border border-base-content/10 shadow-lg">
+    <div class="card-body gap-6">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <div class="text-sm opacity-60">搜索结果</div>
+          <div class="text-2xl font-bold">
+            <?=htmlspecialchars($q ?? '')?>
+          </div>
+          <div class="mt-2 text-sm opacity-70">
+            共找到 <span class="text-primary font-bold">
+              <?=$total?>
+            </span> 条
+            <?php if (isset($from)) { ?>
+            <span class="badge badge-sm badge-ghost ml-2">
+              <?=htmlspecialchars($from)?> 来源
+            </span>
+            <?php } ?>
+          </div>
+        </div>
+        <div class="w-full md:max-w-xl flex flex-col items-end gap-1">
+          <form class="w-full" action="/search" method="get">
+            <div
+              class="join w-full p-1 bg-base-200/60 rounded-2xl border border-base-content/10 focus-within:border-primary">
+              <input class="input join-item w-full bg-transparent focus:outline-none" name="q"
+                value="<?=htmlspecialchars($q ?? '')?>" placeholder="输入关键词继续搜索" />
+              <select class="select join-item bg-transparent focus:outline-none" name="sort">
+                <option value="new" <?=$sort==='new' ? 'selected' : '' ?>>最新</option>
+                <option value="size" <?=$sort==='size' ? 'selected' : '' ?>>大小</option>
+              </select>
+              <button class="btn btn-primary join-item" type="submit">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+            </div>
+          </form>
+          <p class="text-xs text-base-content/50 px-2">
+            提示: Manticore 暂不支持英文单词前缀模糊搜索 (如 "Ubu")，请尝试输入完整单词 (如 "Ubuntu")。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <?php if (empty($items)) { ?>
+  <div class="hero min-h-[40vh] bg-base-200/30 rounded-3xl border border-dashed border-base-content/20">
+    <div class="hero-content text-center">
+      <div class="max-w-md">
+        <h1 class="text-3xl font-bold opacity-30">没有找到结果</h1>
+        <p class="py-6 opacity-60">换个关键词试试，或稍后再来。</p>
+      </div>
+    </div>
+  </div>
+  <?php } else { ?>
+
+  <div class="overflow-hidden rounded-2xl border border-base-content/10 shadow-lg bg-base-100/90">
+    <table class="table table-lg">
+      <thead class="bg-base-200/60 text-base-content/70">
+        <tr>
+          <th class="font-bold uppercase tracking-wider text-xs">资源名称</th>
+          <th class="w-32 font-bold uppercase tracking-wider text-xs">大小</th>
+          <th class="w-48 font-bold uppercase tracking-wider text-xs hidden md:table-cell">信息</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($items as $it) { ?>
+        <?php
+              $infohash = (string) ($it['infohash'] ?? '');
+              $name = (string) ($it['name'] ?? '');
+              $nameHighlight = $it['name_highlight'] ?? null;
+              $sizeTotal = (int) ($it['size_total'] ?? 0);
+            ?>
+        <tr class="group hover:bg-base-200/40 transition-colors duration-200">
+          <td class="max-w-lg">
+            <a class="block font-medium group-hover:text-primary transition-colors text-base"
+              href="/torrent/<?=htmlspecialchars($infohash)?>">
+              <div class="flex items-center gap-3">
+                <div
+                  class="p-2 bg-primary/10 rounded-lg text-primary group-hover:bg-primary group-hover:text-primary-content transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div class="truncate">
+                  <?php if ($nameHighlight) { ?>
+                  <?=strip_tags((string) $nameHighlight, '<b><span class="text-primary">')?>
+                  <?php } else { ?>
+                  <?=htmlspecialchars($name)?>
+                  <?php } ?>
+                </div>
+              </div>
+            </a>
+          </td>
+          <td class="font-mono text-sm opacity-80 whitespace-nowrap">
+            <?=format_size($sizeTotal)?>
+          </td>
+          <td class="hidden md:table-cell">
+            <div class="flex flex-col gap-1">
+              <span class="badge badge-xs badge-neutral font-mono opacity-50">
+                <?=substr($infohash, 0, 7)?>...
+              </span>
+            </div>
+          </td>
+        </tr>
+        <?php } ?>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <?php
+      $pageSize = (int) ($page_size ?? 20);
+      $pageCount = $pageSize > 0 ? (int) ceil($total / $pageSize) : 1;
+      $pageCount = max(1, $pageCount);
+      $prev = max(1, $page - 1);
+      $next = min($pageCount, $page + 1);
+      $qs = http_build_query(['q' => $q, 'sort' => $sort]);
+    ?>
+  <div class="flex items-center justify-between border-t border-base-content/10 pt-6">
+    <span class="text-sm opacity-60">第
+      <?=$page?> /
+      <?=$pageCount?> 页
+    </span>
+    <div class="join shadow-sm">
+      <a class="join-item btn btn-sm <?= $page <= 1 ? 'btn-disabled' : '' ?>"
+        href="/search?<?=$qs?>&page=<?=$prev?>">上一页</a>
+      <button class="join-item btn btn-sm btn-active pointer-events-none">
+        <?=$page?>
+      </button>
+      <a class="join-item btn btn-sm <?= $page >= $pageCount ? 'btn-disabled' : '' ?>"
+        href="/search?<?=$qs?>&page=<?=$next?>">下一页</a>
+    </div>
+  </div>
+  <?php } ?>
+</div>
+
+<?php
+$content = ob_get_clean();
+include __DIR__ . '/../layout.html';

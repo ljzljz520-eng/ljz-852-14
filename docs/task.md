@@ -1,0 +1,21 @@
+# Task: Fix Database Connection Issues
+
+- [x] Fix Database Connection Race Condition <!-- id: 0 -->
+    - [x] Update `docker-compose.yml` to wait for DB health <!-- id: 1 -->
+- [x] Fix Missing Logging Configuration <!-- id: 2 -->
+    - [x] Create `backend/config/log.php` <!-- id: 3 -->
+- [x] Fix Missing Exception Configuration <!-- id: 4 -->
+    - [x] Create `backend/config/exception.php` <!-- id: 5 -->
+- [x] Fix Missing Standard Configurations <!-- id: 6 -->
+    - [x] Create `backend/config/bootstrap.php` <!-- id: 7 -->
+    - [x] Create `backend/config/dependence.php` <!-- id: 8 -->
+    - [x] Create `backend/config/middleware.php` <!-- id: 9 -->
+    - [x] Create `backend/config/translation.php` <!-- id: 10 -->
+    - [x] Create `backend/config/route.php` (Verify content) <!-- id: 11 -->
+- [x] Fix Missing Exception Handler <!-- id: 12 -->
+    - [x] Create `backend/support/exception/Handler.php` <!-- id: 13 -->
+- [x] Localize Torrent Status <!-- id: 14 -->
+    - [x] Update `backend/app/view/torrent/detail.html` <!-- id: 15 -->
+- [x] Add Search Limitation User Hint <!-- id: 16 -->
+    - [x] Update `backend/app/view/search/index.html` <!-- id: 17 -->
+    - [x] Update `backend/app/view/search/list.html`  <!-- id: 18 -->

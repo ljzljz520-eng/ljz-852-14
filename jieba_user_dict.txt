@@ -1,0 +1,6 @@
+磁力链 1000 n
+种子 900 n
+DHT 800 nz
+Manticore 800 nz
+Webman 800 nz
+迅雷 700 nz

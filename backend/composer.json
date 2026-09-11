@@ -1,0 +1,26 @@
+{
+  "name": "acme/manticore-dht-search",
+  "type": "project",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "ext-json": "*",
+    "ext-pdo": "*",
+    "ext-pdo_mysql": "*",
+    "ext-redis": "*",
+    "ext-sockets": "*",
+    "ext-curl": "*",
+    "workerman/webman-framework": "^2.1",
+    "monolog/monolog": "^2.0",
+    "webman/think-orm": "^2.1",
+    "webman/redis": "^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "app\\": "app/",
+      "support\\": "support/"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

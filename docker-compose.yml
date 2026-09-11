@@ -1,0 +1,123 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    depends_on:
+      - app
+    ports:
+      - "3000:80"
+
+  app:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: production
+      APP_RUN_MODE: http
+      HTTP_LISTEN: "http://0.0.0.0:8787"
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: dht_search
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      MANTICORE_HTTP: "http://manticore:9308"
+      MANTICORE_INDEX: torrents_rt
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      manticore:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8787/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "8000:8787"
+
+  crawler:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: production
+      APP_RUN_MODE: crawler
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: dht_search
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_QUEUE_HASH: "queue:hash"
+      REDIS_QUEUE_META: "queue:meta"
+      REDIS_SEEN_KEY: "seen:infohash"
+      BLOOM_ENABLED: 1
+      BLOOM_KEY: "bloom:infohash"
+      BLOOM_BITS: 134217728
+      BLOOM_HASHES: 7
+      BLOOM_USE_SET: 0
+      MANTICORE_HTTP: "http://manticore:9308"
+      MANTICORE_INDEX: torrents_rt
+      DHT_BIND: "0.0.0.0:6881"
+      DHT_BOOTSTRAP: "router.bittorrent.com:6881,dht.transmissionbt.com:6881,router.utorrent.com:6881"
+      FETCH_CONNECT_TIMEOUT_MS: 2500
+      FETCH_IO_TIMEOUT_MS: 5000
+      FETCH_DEADLINE_SEC: 15
+      SPAM_EXTENSIONS: "html,htm,url,exe,lnk,apk,bat,cmd,scr,com,js"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      manticore:
+        condition: service_started
+    command: ["php", "scripts/crawler.php"]
+
+  db:
+    image: ${MYSQL_IMAGE:-mysql:8.0}
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dht_search
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  manticore:
+    image: ${MANTICORE_IMAGE:-manticoresearch/manticore:latest}
+    ports:
+      - "9306:9306"
+      - "9308:9308"
+    volumes:
+      - manticore-data:/var/lib/manticore
+      - ./manticore.conf:/etc/manticoresearch/manticore.conf
+      - ./jieba_user_dict.txt:/etc/manticoresearch/jieba_user_dict.txt
+
+volumes:
+  db-data:
+  redis-data:
+  manticore-data:
