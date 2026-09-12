@@ -77,6 +77,7 @@ ob_start();
               $name = (string) ($it['name'] ?? '');
               $nameHighlight = $it['name_highlight'] ?? null;
               $sizeTotal = (int) ($it['size_total'] ?? 0);
+              $tagList = array_values(array_filter(array_map('trim', explode(',', (string) ($it['tags'] ?? '')))));
             ?>
         <tr class="group hover:bg-base-200/40 transition-colors duration-200">
           <td class="max-w-lg">
@@ -91,11 +92,20 @@ ob_start();
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <div class="truncate">
-                  <?php if ($nameHighlight) { ?>
-                  <?=strip_tags((string) $nameHighlight, '<b><span class="text-primary">')?>
-                  <?php } else { ?>
-                  <?=htmlspecialchars($name)?>
+                <div class="min-w-0">
+                  <div class="truncate">
+                    <?php if ($nameHighlight) { ?>
+                    <?=strip_tags((string) $nameHighlight, '<b><span class="text-primary">')?>
+                    <?php } else { ?>
+                    <?=htmlspecialchars($name)?>
+                    <?php } ?>
+                  </div>
+                  <?php if ($tagList) { ?>
+                  <div class="mt-1 flex flex-wrap gap-1">
+                    <?php foreach (array_slice($tagList, 0, 4) as $tag) { ?>
+                    <span class="badge badge-xs badge-ghost font-normal opacity-70"><?=htmlspecialchars($tag)?></span>
+                    <?php } ?>
+                  </div>
                   <?php } ?>
                 </div>
               </div>

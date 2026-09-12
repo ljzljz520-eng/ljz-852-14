@@ -58,6 +58,7 @@ class ManticoreClient
                 'infohash' => (string) ($source['infohash'] ?? ''),
                 'name' => (string) ($source['name'] ?? ''),
                 'name_highlight' => $nameSnippets ? (string) $nameSnippets[0] : null,
+                'tags' => (string) ($source['tags'] ?? ''),
                 'size_total' => (int) ($source['size_total'] ?? 0),
                 'created_at' => (int) ($source['created_at'] ?? 0),
             ];

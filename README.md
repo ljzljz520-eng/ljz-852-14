@@ -29,6 +29,21 @@ docker compose up --build -d
 ```
 启动成功后，访问 [http://localhost:3000](http://localhost:3000) 即可使用。
 
+### 导入演示数据（可选）
+服务启动后，可导入 50 条公开测试元数据（Linux 镜像、开源软件、公有领域影片 / 音乐 / 书籍等，
+含 hash、标题、文件名、大小、时间、标签），导入后立即可在搜索框搜到：
+
+```bash
+# 在 app 容器内执行（也可直接 php scripts/seed_demo.php，需能连通 MySQL 与 Manticore）
+docker compose exec app php scripts/seed_demo.php
+
+# 重复执行是安全的（MySQL 主键 upsert + Manticore REPLACE，不会产生重复记录）
+# 清理本脚本导入的演示数据：
+docker compose exec app php scripts/seed_demo.php --clean
+```
+
+所有演示记录的 infohash 均以 `deadbeef` 开头，便于识别与清理；脚本末尾会自动执行搜索自测。
+
 ## ✨ 特性
 - **极速检索**: 基于 Manticore Search，亿级数据毫秒响应。
 - **实时爬虫**: 内置 DHT 爬虫节点，实时发现新资源。

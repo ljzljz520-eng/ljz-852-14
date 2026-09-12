@@ -11,6 +11,8 @@
 | `name` | VARCHAR(1024) | 种子名称 |
 | `size_total` | BIGINT | 总大小 (字节) |
 | `file_count` | INT | 文件数量 |
+| `extension` | VARCHAR(16) | 单文件资源的扩展名（多文件为空） |
+| `tags` | VARCHAR(255) | 标签，逗号分隔（可空），同时同步到搜索索引支持标签检索 |
 | `files_json` | JSON | 文件列表详情 |
 | `status` | VARCHAR(32) | 状态 (active, dead, suspect, fetched) |
 | `created_at` | TIMESTAMP | 创建时间 |
@@ -35,9 +37,13 @@
 - **分词器**: `jieba_chinese` (支持中文分词)
 - **字段**:
   - `name`: 全文索引字段
+  - `tags`: 全文索引字段（逗号分隔的标签，参与全文检索，结果中回传）
   - `infohash`: 属性字段
   - `size_total`: 属性字段 (用于排序)
   - `created_at`: 属性字段 (用于排序)
+
+> 老版本实时索引若缺少 `tags` 列，`init.php` / 爬虫启动 / `seed_demo.php`
+> 会在 `ensureTable()` 中通过 `ALTER TABLE ... ADD COLUMN` 在线补齐，无需重建索引。
 
 ## 3. 接口设计
 主要由 `SearchController` 和 `TorrentController` 处理：

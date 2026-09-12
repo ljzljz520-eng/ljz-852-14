@@ -39,6 +39,7 @@ class IndexerWorker
         $files = $meta['files'] ?? null;
         $fileCount = (int) ($meta['file_count'] ?? 0);
         $extension = (string) ($meta['extension'] ?? '');
+        $tags = (string) ($meta['tags'] ?? '');
         $createdAt = (int) ($meta['created_at'] ?? time());
 
         if ($infohash === '' || $name === '') {
@@ -46,13 +47,13 @@ class IndexerWorker
         }
 
         if ($this->isSpam($fileCount, $extension)) {
-            $this->db->upsertTorrent($infohash, $name, $sizeTotal, $files, 'spam', $fileCount, $extension);
+            $this->db->upsertTorrent($infohash, $name, $sizeTotal, $files, 'spam', $fileCount, $extension, $tags);
             $this->db->markQueue($infohash, 'spam', 0, null);
             return;
         }
 
-        $this->db->upsertTorrent($infohash, $name, $sizeTotal, $files, 'fetched', $fileCount, $extension);
-        $this->indexer->upsert($infohash, $name, $sizeTotal, $createdAt);
+        $this->db->upsertTorrent($infohash, $name, $sizeTotal, $files, 'fetched', $fileCount, $extension, $tags);
+        $this->indexer->upsert($infohash, $name, $sizeTotal, $createdAt, $tags);
         $this->db->markQueue($infohash, 'done', 0, null);
     }
 

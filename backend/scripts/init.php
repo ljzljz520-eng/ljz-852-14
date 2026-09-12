@@ -83,17 +83,50 @@ function http_post(string $url, string $body, array $headers = []): array
 
 function ensure_manticore_table(string $baseUrl, string $table): void
 {
-    $sql = "CREATE TABLE IF NOT EXISTS {$table}(name text, infohash string, size_total bigint, created_at timestamp) morphology='jieba_chinese'";
+    $sql = "CREATE TABLE IF NOT EXISTS {$table}(name text, tags text, infohash string, size_total bigint, created_at timestamp) morphology='jieba_chinese'";
     [$code, $resp] = http_post(rtrim($baseUrl, '/') . '/cli', $sql);
     if ($code < 200 || $code >= 300) {
         throw new RuntimeException("manticore cli http {$code}: {$resp}");
     }
+    // 旧环境可能在 tags 字段上线前就已建好实时索引，在线补齐该列。
+    $columns = manticore_columns($baseUrl, $table);
+    if (!in_array('tags', $columns, true)) {
+        [$code, $resp] = http_post(rtrim($baseUrl, '/') . '/cli', "ALTER TABLE {$table} ADD COLUMN tags text");
+        if (($code < 200 || $code >= 300) && stripos((string) $resp, 'duplicate') === false) {
+            throw new RuntimeException("manticore cli http {$code}: {$resp}");
+        }
+    }
 }
 
-function manticore_replace(string $baseUrl, string $table, int $id, string $infohash, string $name, int $sizeTotal, int $createdAt): void
+/**
+ * @return string[]
+ */
+function manticore_columns(string $baseUrl, string $table): array
+{
+    $ch = curl_init(rtrim($baseUrl, '/') . '/sql');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['query' => "DESC {$table}"]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $resp = curl_exec($ch);
+    curl_close($ch);
+    if ($resp === false) {
+        return [];
+    }
+    $data = json_decode($resp, true);
+    $rows = $data[0]['data'] ?? ($data['data'] ?? []);
+    if (!is_array($rows)) {
+        return [];
+    }
+    return array_values(array_filter(array_map(static fn($r) => (string) ($r['Field'] ?? ''), $rows)));
+}
+
+function manticore_replace(string $baseUrl, string $table, int $id, string $infohash, string $name, int $sizeTotal, int $createdAt, string $tags = ''): void
 {
     $escapedName = str_replace("'", "''", $name);
-    $sql = "REPLACE INTO {$table}(id, name, infohash, size_total, created_at) VALUES ({$id}, '{$escapedName}', '{$infohash}', {$sizeTotal}, {$createdAt})";
+    $escapedTags = str_replace("'", "''", $tags);
+    $sql = "REPLACE INTO {$table}(id, name, tags, infohash, size_total, created_at) VALUES ({$id}, '{$escapedName}', '{$escapedTags}', '{$infohash}', {$sizeTotal}, {$createdAt})";
     [$code, $resp] = http_post(rtrim($baseUrl, '/') . '/cli', $sql);
     if ($code < 200 || $code >= 300) {
         throw new RuntimeException("manticore replace http {$code}: {$resp}");
@@ -121,6 +154,7 @@ CREATE TABLE IF NOT EXISTS torrents (
   size_total BIGINT UNSIGNED NOT NULL DEFAULT 0,
   file_count INT UNSIGNED NOT NULL DEFAULT 0,
   extension VARCHAR(16) NOT NULL DEFAULT '',
+  tags VARCHAR(255) NOT NULL DEFAULT '',
   files_json JSON NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'new',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -130,6 +164,7 @@ SQL);
 
 add_column_if_missing($pdo, $dbName, 'torrents', 'file_count', 'file_count INT UNSIGNED NOT NULL DEFAULT 0');
 add_column_if_missing($pdo, $dbName, 'torrents', 'extension', "extension VARCHAR(16) NOT NULL DEFAULT ''");
+add_column_if_missing($pdo, $dbName, 'torrents', 'tags', "tags VARCHAR(255) NOT NULL DEFAULT ''");
 
 $pdo->exec(<<<'SQL'
 CREATE TABLE IF NOT EXISTS torrent_peers (
@@ -165,6 +200,7 @@ if ($count === 0) {
             'size_total' => 4865392640,
             'file_count' => 1,
             'extension' => 'iso',
+            'tags' => 'Linux,Ubuntu,操作系统,安装镜像',
             'files_json' => json_encode([
                 ['path' => 'ubuntu-22.04.4-desktop-amd64.iso', 'size' => 4865392640],
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
@@ -176,6 +212,7 @@ if ($count === 0) {
             'size_total' => 661651456,
             'file_count' => 1,
             'extension' => 'iso',
+            'tags' => 'Linux,Debian,操作系统,安装镜像',
             'files_json' => json_encode([
                 ['path' => 'debian-12.5.0-amd64-netinst.iso', 'size' => 661651456],
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
@@ -187,6 +224,7 @@ if ($count === 0) {
             'size_total' => 2264924160,
             'file_count' => 1,
             'extension' => 'iso',
+            'tags' => 'Linux,Fedora,操作系统,安装镜像',
             'files_json' => json_encode([
                 ['path' => 'Fedora-Workstation-Live-x86_64-40-1.14.iso', 'size' => 2264924160],
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
@@ -194,7 +232,7 @@ if ($count === 0) {
         ],
     ];
 
-    $stmt = $pdo->prepare('INSERT INTO torrents(infohash,name,size_total,file_count,extension,files_json,status) VALUES (:infohash,:name,:size_total,:file_count,:extension,:files_json,:status)');
+    $stmt = $pdo->prepare('INSERT INTO torrents(infohash,name,size_total,file_count,extension,tags,files_json,status) VALUES (:infohash,:name,:size_total,:file_count,:extension,:tags,:files_json,:status)');
     foreach ($seed as $row) {
         $stmt->execute($row);
     }
@@ -243,7 +281,7 @@ wait_manticore($manticoreBase, 60, 1000);
 
 ensure_manticore_table($manticoreBase, $manticoreIndex);
 
-$rows = $pdo->query('SELECT infohash,name,size_total,UNIX_TIMESTAMP(created_at) AS created_ts FROM torrents ORDER BY created_at DESC LIMIT 50')->fetchAll();
+$rows = $pdo->query('SELECT infohash,name,size_total,tags,UNIX_TIMESTAMP(created_at) AS created_ts FROM torrents ORDER BY created_at DESC LIMIT 50')->fetchAll();
 foreach ($rows as $row) {
     $id = (int) hexdec(substr($row['infohash'], 0, 15));
     manticore_replace(
@@ -253,7 +291,8 @@ foreach ($rows as $row) {
         $row['infohash'],
         $row['name'],
         (int) $row['size_total'],
-        (int) $row['created_ts']
+        (int) $row['created_ts'],
+        (string) ($row['tags'] ?? '')
     );
 }
 

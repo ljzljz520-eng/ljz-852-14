@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS torrents (
   size_total BIGINT UNSIGNED NOT NULL DEFAULT 0,
   file_count INT UNSIGNED NOT NULL DEFAULT 0,
   extension VARCHAR(16) NOT NULL DEFAULT '',
+  tags VARCHAR(255) NOT NULL DEFAULT '',
   files_json JSON NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'new',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -67,6 +68,7 @@ SQL);
         if ($dbName !== '') {
             $this->addColumnIfMissing($dbName, 'torrents', 'file_count', 'file_count INT UNSIGNED NOT NULL DEFAULT 0');
             $this->addColumnIfMissing($dbName, 'torrents', 'extension', "extension VARCHAR(16) NOT NULL DEFAULT ''");
+            $this->addColumnIfMissing($dbName, 'torrents', 'tags', "tags VARCHAR(255) NOT NULL DEFAULT ''");
         }
 
         $this->pdo->exec(<<<'SQL'
@@ -147,16 +149,18 @@ SQL);
         return $stmt->fetchAll();
     }
 
-    public function upsertTorrent(string $infohash, string $name, int $sizeTotal, ?array $files, string $status, int $fileCount, string $extension): void
+    public function upsertTorrent(string $infohash, string $name, int $sizeTotal, ?array $files, string $status, int $fileCount, string $extension, string $tags = ''): void
     {
+        $tags = mb_substr($tags, 0, 255);
         $filesJson = $files ? json_encode($files, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
-        $stmt = $this->pdo->prepare('INSERT INTO torrents(infohash,name,size_total,file_count,extension,files_json,status) VALUES (:infohash,:name,:size_total,:file_count,:extension,:files_json,:status) ON DUPLICATE KEY UPDATE name=VALUES(name), size_total=VALUES(size_total), file_count=VALUES(file_count), extension=VALUES(extension), files_json=VALUES(files_json), status=VALUES(status)');
+        $stmt = $this->pdo->prepare('INSERT INTO torrents(infohash,name,size_total,file_count,extension,tags,files_json,status) VALUES (:infohash,:name,:size_total,:file_count,:extension,:tags,:files_json,:status) ON DUPLICATE KEY UPDATE name=VALUES(name), size_total=VALUES(size_total), file_count=VALUES(file_count), extension=VALUES(extension), tags=VALUES(tags), files_json=VALUES(files_json), status=VALUES(status)');
         $stmt->execute([
             'infohash' => $infohash,
             'name' => $name,
             'size_total' => $sizeTotal,
             'file_count' => $fileCount,
             'extension' => $extension,
+            'tags' => $tags,
             'files_json' => $filesJson,
             'status' => $status,
         ]);
