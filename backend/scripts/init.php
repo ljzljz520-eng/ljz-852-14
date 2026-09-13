@@ -61,16 +61,109 @@ function add_column_if_missing(PDO $pdo, string $dbName, string $table, string $
     }
 }
 
-function http_post(string $url, string $body, array $headers = []): array
+function ensure_manticore_table(string $baseUrl, string $table): void
 {
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    if ($headers) {
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    // 与 manticore.conf 中的 charset_table 保持一致；SQL 方式 CREATE 不会读取配置文件里
+    // plain 模式的 index 定义，不显式声明 CJK 区段的话 jieba 分词了但中文不进索引。
+    $charset = 'non_cjk, U+4E00..U+9FFF, U+3400..U+4DBF, U+20000..U+2A6DF, U+2A700..U+2B73F, U+2B740..U+2B81F, U+2B820..U+2CEAF';
+    $sql = "CREATE TABLE IF NOT EXISTS {$table}(name text, file_names text, tags text, infohash string, size_total bigint, created_at timestamp) morphology='jieba_chinese' min_prefix_len='1' charset_table='{$charset}'";
+    // 统一走 /sql JSON 接口：/cli 依赖 buddy 侧车且 SQL 报错也返回 HTTP 200，无法判定成败。
+    manticore_sql_exec($baseUrl, $sql);
+    // 旧环境可能在 file_names / tags 字段上线前就已建好实时索引，在线补齐列。
+    // ALTER 走 /sql JSON 接口：/cli 即使 SQL 报错也返回 HTTP 200（正文为 ERROR ... 文本），
+    // 无法靠状态码判断成败。
+    $columns = manticore_columns($baseUrl, $table);
+    foreach (['file_names', 'tags'] as $column) {
+        if (in_array($column, $columns, true)) {
+            continue;
+        }
+        try {
+            manticore_sql_exec($baseUrl, "ALTER TABLE {$table} ADD COLUMN {$column} text");
+        } catch (RuntimeException $e) {
+            // 并发启动或老版本错误码差异时，可能已被其它进程补过，复查一次即可。
+            if (!in_array($column, manticore_columns($baseUrl, $table), true)) {
+                throw $e;
+            }
+        }
     }
+    // 老表创建时没有开启前缀展开，在线补上（仅对之后写入/重写的文档生效）。
+    if (!manticore_setting_ge($baseUrl, $table, 'min_prefix_len', 1)) {
+        try {
+            manticore_sql_exec($baseUrl, "ALTER TABLE {$table} min_prefix_len='1'");
+        } catch (RuntimeException $e) {
+            // 部分老版本 Manticore 不支持在线修改 FT 设置；新建表已在 CREATE 中带上该设置。
+            if (!manticore_setting_ge($baseUrl, $table, 'min_prefix_len', 1)) {
+                throw $e;
+            }
+        }
+    }
+    // 老表可能没有 CJK 字符集（旧 CREATE 未声明 charset_table），中文无法进索引，在线补齐。
+    if (!manticore_charset_covers_cjk($baseUrl, $table)) {
+        try {
+            manticore_sql_exec($baseUrl, "ALTER TABLE {$table} charset_table='{$charset}'");
+        } catch (RuntimeException $e) {
+            if (!manticore_charset_covers_cjk($baseUrl, $table)) {
+                throw $e;
+            }
+        }
+    }
+}
+
+/**
+ * SHOW TABLE SETTINGS 的多行 Value 文本（29.x）；旧版本逐行形态则拼成 key = value。
+ */
+function manticore_settings_blob(string $baseUrl, string $table): string
+{
+    $ch = curl_init(rtrim($baseUrl, '/') . '/sql?mode=raw');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['query' => "SHOW TABLE {$table} SETTINGS"]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $resp = curl_exec($ch);
+    curl_close($ch);
+    if ($resp === false) {
+        return '';
+    }
+    $data = json_decode($resp, true);
+    if (!is_array($data) || !empty($data['error']) || !empty($data[0]['error'])) {
+        return '';
+    }
+    $rows = $data['data'] ?? ($data[0]['data'] ?? []);
+    if (!is_array($rows)) {
+        return '';
+    }
+    $blob = '';
+    foreach ($rows as $row) {
+        $name = (string) ($row['Setting'] ?? $row['setting'] ?? $row['Variable_name'] ?? '');
+        $value = (string) ($row['Value'] ?? $row['value'] ?? '');
+        $blob .= $name === 'settings' ? "\n{$value}" : "\n{$name} = {$value}";
+    }
+    return $blob;
+}
+
+function manticore_charset_covers_cjk(string $baseUrl, string $table): bool
+{
+    $blob = manticore_settings_blob($baseUrl, $table);
+    if (!preg_match('/^\s*charset_table\s*=\s*(.*)$/m', $blob, $m)) {
+        return false;
+    }
+    $charset = $m[1];
+    return str_contains($charset, 'U+4E00') || str_contains($charset, 'chinese')
+        || str_contains($charset, 'cjk') || str_contains($charset, 'cont');
+}
+
+/**
+ * 通过 /sql JSON 接口执行 DDL/DML，响应体带 error 字段时抛异常。
+ */
+function manticore_sql_exec(string $baseUrl, string $sql): void
+{
+    $ch = curl_init(rtrim($baseUrl, '/') . '/sql?mode=raw');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['query' => $sql]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     $resp = curl_exec($ch);
     $err = curl_error($ch);
     $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
@@ -78,24 +171,29 @@ function http_post(string $url, string $body, array $headers = []): array
     if ($resp === false) {
         throw new RuntimeException($err ?: 'curl error');
     }
-    return [$code, $resp];
+    if ($code < 200 || $code >= 300) {
+        throw new RuntimeException("manticore sql http {$code}: {$resp}");
+    }
+    $data = json_decode($resp, true);
+    if (!is_array($data)) {
+        throw new RuntimeException('invalid json response from manticore sql');
+    }
+    if (isset($data['error']) && $data['error'] !== '' && $data['error'] !== null) {
+        $message = is_array($data['error']) ? json_encode($data['error'], JSON_UNESCAPED_UNICODE) : (string) $data['error'];
+        throw new RuntimeException("manticore sql error: {$message}");
+    }
 }
 
-function ensure_manticore_table(string $baseUrl, string $table): void
+/**
+ * 读取实时索引的整型 FT 设置，判断是否 >= $min。
+ */
+function manticore_setting_ge(string $baseUrl, string $table, string $setting, int $min): bool
 {
-    $sql = "CREATE TABLE IF NOT EXISTS {$table}(name text, tags text, infohash string, size_total bigint, created_at timestamp) morphology='jieba_chinese'";
-    [$code, $resp] = http_post(rtrim($baseUrl, '/') . '/cli', $sql);
-    if ($code < 200 || $code >= 300) {
-        throw new RuntimeException("manticore cli http {$code}: {$resp}");
+    $blob = manticore_settings_blob($baseUrl, $table);
+    if (preg_match('/^\s*' . preg_quote($setting, '/') . '\s*=\s*(\d+)\s*$/m', $blob, $m)) {
+        return (int) $m[1] >= $min;
     }
-    // 旧环境可能在 tags 字段上线前就已建好实时索引，在线补齐该列。
-    $columns = manticore_columns($baseUrl, $table);
-    if (!in_array('tags', $columns, true)) {
-        [$code, $resp] = http_post(rtrim($baseUrl, '/') . '/cli', "ALTER TABLE {$table} ADD COLUMN tags text");
-        if (($code < 200 || $code >= 300) && stripos((string) $resp, 'duplicate') === false) {
-            throw new RuntimeException("manticore cli http {$code}: {$resp}");
-        }
-    }
+    return false;
 }
 
 /**
@@ -103,7 +201,7 @@ function ensure_manticore_table(string $baseUrl, string $table): void
  */
 function manticore_columns(string $baseUrl, string $table): array
 {
-    $ch = curl_init(rtrim($baseUrl, '/') . '/sql');
+    $ch = curl_init(rtrim($baseUrl, '/') . '/sql?mode=raw');
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['query' => "DESC {$table}"]));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -122,15 +220,63 @@ function manticore_columns(string $baseUrl, string $table): array
     return array_values(array_filter(array_map(static fn($r) => (string) ($r['Field'] ?? ''), $rows)));
 }
 
-function manticore_replace(string $baseUrl, string $table, int $id, string $infohash, string $name, int $sizeTotal, int $createdAt, string $tags = ''): void
+function manticore_replace(string $baseUrl, string $table, int $id, string $infohash, string $name, int $sizeTotal, int $createdAt, string $tags = '', string $fileNames = ''): void
 {
-    $escapedName = str_replace("'", "''", $name);
-    $escapedTags = str_replace("'", "''", $tags);
-    $sql = "REPLACE INTO {$table}(id, name, tags, infohash, size_total, created_at) VALUES ({$id}, '{$escapedName}', '{$escapedTags}', '{$infohash}', {$sizeTotal}, {$createdAt})";
-    [$code, $resp] = http_post(rtrim($baseUrl, '/') . '/cli', $sql);
-    if ($code < 200 || $code >= 300) {
+    // 走 JSON /replace：幂等（同 id 更新），由 JSON 负责转义，避免文件名/标题带单引号时出错。
+    $payload = [
+        'index' => $table,
+        'id' => $id,
+        'doc' => [
+            'name' => $name,
+            'file_names' => $fileNames,
+            'tags' => $tags,
+            'infohash' => $infohash,
+            'size_total' => $sizeTotal,
+            'created_at' => $createdAt,
+        ],
+    ];
+    $ch = curl_init(rtrim($baseUrl, '/') . '/replace');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $resp = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    if ($resp === false) {
+        throw new RuntimeException($err ?: 'curl error');
+    }
+    if ($code !== 200 && $code !== 201) {
         throw new RuntimeException("manticore replace http {$code}: {$resp}");
     }
+    $data = json_decode((string) $resp, true);
+    if (is_array($data) && isset($data['error']) && $data['error'] !== '' && $data['error'] !== null) {
+        throw new RuntimeException('manticore replace error: ' . json_encode($data['error'], JSON_UNESCAPED_UNICODE));
+    }
+}
+
+/**
+ * 从 files_json 中提取全部文件路径，拼成空格分隔的全文索引内容。
+ * files_json 缺失或为空时退回资源名。
+ */
+function file_names_from_json(?string $filesJson, string $fallback): string
+{
+    if ($filesJson === null || $filesJson === '') {
+        return $fallback;
+    }
+    $files = json_decode($filesJson, true);
+    if (!is_array($files)) {
+        return $fallback;
+    }
+    $paths = [];
+    foreach ($files as $f) {
+        if (is_array($f) && isset($f['path']) && is_string($f['path']) && $f['path'] !== '') {
+            $paths[] = $f['path'];
+        }
+    }
+    return $paths ? implode(' ', $paths) : $fallback;
 }
 
 $dbHost = env_str('DB_HOST', '127.0.0.1');
@@ -243,27 +389,22 @@ $manticoreIndex = env_str('MANTICORE_INDEX', 'torrents_rt');
 
 function wait_manticore(string $baseUrl, int $maxAttempts, int $sleepMs): void
 {
-    $url = rtrim($baseUrl, '/') . '/search'; // Using search endpoint to check readiness
+    // 用原生 /sql 接口探活（不依赖 buddy 侧车）：SHOW STATUS 始终可用。
+    $url = rtrim($baseUrl, '/') . '/sql?mode=raw';
     $attempt = 0;
     while (true) {
         $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['query' => 'SHOW STATUS']));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        // We just check if we get a response, even 404 is fine as long as server talks
-        // But Manticore HTTP usually returns something or we can check /sql
-        // Let's use /search which is standard HTTP endpoint, or just check connectivity
-        // Actually the code uses /cli endpoint which is basically SQL over HTTP
-
-        // Let's use a simple query to check connectivity
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, "SHOW TABLES");
-        curl_setopt($ch, CURLOPT_URL, rtrim($baseUrl, '/') . '/cli');
 
         $resp = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
 
-        if ($code >= 200 && $code < 500) {
+        if ($resp !== false && $code >= 200 && $code < 500 && str_contains((string) $resp, 'uptime')) {
             return;
         }
 
@@ -281,7 +422,7 @@ wait_manticore($manticoreBase, 60, 1000);
 
 ensure_manticore_table($manticoreBase, $manticoreIndex);
 
-$rows = $pdo->query('SELECT infohash,name,size_total,tags,UNIX_TIMESTAMP(created_at) AS created_ts FROM torrents ORDER BY created_at DESC LIMIT 50')->fetchAll();
+$rows = $pdo->query('SELECT infohash,name,size_total,tags,files_json,UNIX_TIMESTAMP(created_at) AS created_ts FROM torrents ORDER BY created_at DESC LIMIT 50')->fetchAll();
 foreach ($rows as $row) {
     $id = (int) hexdec(substr($row['infohash'], 0, 15));
     manticore_replace(
@@ -292,7 +433,8 @@ foreach ($rows as $row) {
         $row['name'],
         (int) $row['size_total'],
         (int) $row['created_ts'],
-        (string) ($row['tags'] ?? '')
+        (string) ($row['tags'] ?? ''),
+        file_names_from_json($row['files_json'] ?? null, (string) $row['name'])
     );
 }
 

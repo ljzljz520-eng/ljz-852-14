@@ -35,15 +35,19 @@
 ### 2.1 索引结构 (`torrents_rt`)
 - **类型**: Real-time Index (及该索引支持实时写入)
 - **分词器**: `jieba_chinese` (支持中文分词)
+- **前缀匹配**: `min_prefix_len=1`，查询端自动补 `*` 的词干前缀展开可用
 - **字段**:
   - `name`: 全文索引字段
+  - `file_names`: 全文索引字段，种子内全部文件路径（空格拼接），支持按文件名片段检索
   - `tags`: 全文索引字段（逗号分隔的标签，参与全文检索，结果中回传）
   - `infohash`: 属性字段
   - `size_total`: 属性字段 (用于排序)
   - `created_at`: 属性字段 (用于排序)
 
-> 老版本实时索引若缺少 `tags` 列，`init.php` / 爬虫启动 / `seed_demo.php`
-> 会在 `ensureTable()` 中通过 `ALTER TABLE ... ADD COLUMN` 在线补齐，无需重建索引。
+> 老版本实时索引若缺少 `tags` / `file_names` 列或未开启 `min_prefix_len`，`init.php` / 爬虫启动 /
+> `seed_demo.php` 会在 `ensureTable()` 中通过 `ALTER TABLE ... ADD COLUMN` 与
+> `ALTER TABLE ... min_prefix_len='1'` 在线补齐，无需重建索引；FT 设置仅对之后写入/重写的
+> 文档生效，旧文档需重新写入后才支持前缀通配。
 
 ## 3. 接口设计
 主要由 `SearchController` 和 `TorrentController` 处理：

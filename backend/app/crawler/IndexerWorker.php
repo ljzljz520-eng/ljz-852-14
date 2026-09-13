@@ -53,7 +53,7 @@ class IndexerWorker
         }
 
         $this->db->upsertTorrent($infohash, $name, $sizeTotal, $files, 'fetched', $fileCount, $extension, $tags);
-        $this->indexer->upsert($infohash, $name, $sizeTotal, $createdAt, $tags);
+        $this->indexer->upsert($infohash, $name, $sizeTotal, $createdAt, $tags, $files);
         $this->db->markQueue($infohash, 'done', 0, null);
     }
 

@@ -24,11 +24,19 @@ class ManticoreClient
         $offset = ($page - 1) * $pageSize;
 
         $matchQuery = $this->buildFuzzyQuery($q);
+        $matchValue = $matchQuery;
+        // Manticore JSON match 默认用 OR 连接关键词，而文件名片段（如 ubuntu-24.04-desktop）
+        // 会被 . / - 等分隔符在索引端切成多个 token，OR 语义会把只命中数字片段（24、04…）
+        // 的无关记录也算作命中。显式要求 AND（所有 token 都要命中）；单词查询结果不变，
+        // 含引号的短语查询保持原样交给 Manticore 解析。
+        if ($matchQuery !== '' && !str_contains($matchQuery, '"')) {
+            $matchValue = ['query' => $matchQuery, 'operator' => 'and'];
+        }
         $query = [
             'table' => $this->table,
             'query' => [
                 'match' => [
-                    '*' => $matchQuery,
+                    '*' => $matchValue,
                 ],
             ],
             'limit' => $pageSize,
@@ -39,6 +47,8 @@ class ManticoreClient
         ];
 
         if ($sort === 'new') {
+            // PHP 关联数组 [['created_at' => 'desc']] 经 json_encode 输出为
+            // [{"created_at":"desc"}]，正是 Manticore /search 要求的对象数组形式。
             $query['sort'] = [['created_at' => 'desc']];
         } elseif ($sort === 'size') {
             $query['sort'] = [['size_total' => 'desc']];
@@ -126,6 +136,13 @@ class ManticoreClient
         $data = json_decode($resp, true);
         if (!is_array($data)) {
             throw new RuntimeException('invalid json response');
+        }
+        // Manticore 的 /search 在查询出错（如索引未开启 min_prefix_len 却用了 * 通配）时，
+        // HTTP 状态码仍是 200，错误信息放在响应体的 error 字段里，必须显式检查，
+        // 否则会被静默当成“零命中”。
+        if (isset($data['error']) && $data['error'] !== '' && $data['error'] !== null) {
+            $message = is_array($data['error']) ? json_encode($data['error'], JSON_UNESCAPED_UNICODE) : (string) $data['error'];
+            throw new RuntimeException("manticore search error: {$message}");
         }
         return $data;
     }

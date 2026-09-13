@@ -224,7 +224,7 @@ $db->waitReady(60, 1000);
 $db->ensureSchema(); // 幂等：老库缺 tags / file_count 等列时自动补齐
 
 $indexer = new TorrentIndexer();
-$indexer->ensureTable(); // 幂等：老索引缺 tags 全文字段时在线 ALTER 补齐
+$indexer->ensureTable(); // 幂等：老索引缺 file_names/tags 列、未开前缀或 CJK 字符集时在线 ALTER 补齐
 
 // 通过反射取出 Db 内部的 PDO，用于本脚本专用的固定时间戳写入与清理语句。
 $reflectionPdo = new ReflectionProperty(Db::class, 'pdo');
@@ -367,7 +367,7 @@ foreach ($seed as $entry) {
     ]);
 
     // RT 索引 REPLACE 即时生效，无需重建/刷新
-    $indexer->upsert($infohash, $name, $sizeTotal, $ts, $tags);
+    $indexer->upsert($infohash, $name, $sizeTotal, $ts, $tags, $files);
 
     fwrite(STDOUT, sprintf("  [%2d/%d] %s  %s\n", $i, count($seed), $infohash, $name));
 }
@@ -391,6 +391,8 @@ $checks = [
     '回合制' => '仅命中标签字段',
     '古典音乐' => '仅命中标签/标签词',
     'Linux' => '英文分类词',
+    'ubuntu-24.04-desktop' => '按文件名片段（单文件 .iso）',
+    'big_buck_bunny_1080p' => '按文件名片段（多文件合集内路径）',
 ];
 
 $failed = 0;
